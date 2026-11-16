@@ -1,45 +1,45 @@
 # ProbSMT
 
-ProbSMT is a Z3-based research prototype that injects distribution-aware sampling into SMT solving.
+ProbSMT is a Z3-based research prototype that injects distribution-aware sampling into SMT solving. Constant declarations may carry a distribution annotation, which this fork uses when sampling a real assignment. The annotations are specific to this fork and lie outside standard SMT-LIB.
 
-## What is different from standard SMT-LIB?
+The paper is included as [ASE2023_PSMT.pdf](ASE2023_PSMT.pdf).
 
-This prototype extends constant declarations with distribution annotations:
+## Overview
+
+A declaration names one distribution and two rational parameters:
 
 ```smt2
 (declare-const x Real UD 0 1000)
 (declare-const y Real GD 0 0.1)
 ```
 
-- `UD`: uniform-style distribution parameters (center + spread in this implementation)
-- `GD`: gaussian-style distribution parameters (mean + scale)
+`UD` is the uniform-style annotation. In this implementation the two numerals are a center and a spread. `GD` is the Gaussian-style annotation. The two numerals are a mean and a scale. Runnable examples are under [test/](test/) and [test/smt/](test/smt/).
 
-See runnable examples under `test/` and `test/smt/`.
+## Requirements
 
-## Implementation Path (Where the magic happens)
+The build below uses CMake 3.4 or newer, a C++17 compiler, and Make. Other generators and options are documented in [README-CMake.md](README-CMake.md).
 
-If you want to trace execution from input to sampling behavior:
+## Building
 
-1. Parser accepts extended declarations:
-   - `src/parsers/smt2/smt2parser.cpp`
-   - distribution metadata is collected into a temporary `.extract` file.
-2. NLSAT solver loads those metadata:
-   - `src/nlsat/nlsat_solver.cpp`
-3. Sampling and interval probability logic:
-   - `src/nlsat/nlsat_interval_set.h`
-   - `src/nlsat/nlsat_interval_set.cpp`
+From the repository root, this Unix Makefiles procedure produces the `build/z3` executable used by the commands below. [README-CMake.md](README-CMake.md) is the full build reference.
 
-This means distribution annotations are not standard SMT-LIB behavior and only work in this fork.
+```bash
+mkdir build
+cd build
+cmake -G "Unix Makefiles" ../
+make -j4
+```
+
+Replace `4` with a suitable job count.
 
 ## Quick Start
 
-`Prob_Circle.smt2` uses two probabilistic variables with additional geometric constraints:
+[test/Prob_Circle.smt2](test/Prob_Circle.smt2) uses two probabilistic variables with additional geometric constraints:
 
 ```smt2
 (set-logic QF_NRA)
 (declare-const x Real UD 0 1000)
 (declare-const y Real UD 0 1000)
-
 (assert (and (>= x -1) (<= x 1)))
 (assert (and (>= y -1) (<= y 1)))
 (check-sat)
@@ -54,52 +54,60 @@ cd test
 
 You should see `sat` and one model assignment.
 
-## Reproduce the Case Study
+## Implementation Guide
 
-The case-study goal is not only to "run commands", but to observe the two trends reported in the paper:
+The parser accepts `UD` and `GD` on `declare-const` in [src/parsers/smt2/smt2parser.cpp](src/parsers/smt2/smt2parser.cpp). The NLSAT solver loads that metadata in [src/nlsat/nlsat_solver.cpp](src/nlsat/nlsat_solver.cpp). Sampling and interval probability logic are in [src/nlsat/nlsat_interval_set.h](src/nlsat/nlsat_interval_set.h) and [src/nlsat/nlsat_interval_set.cpp](src/nlsat/nlsat_interval_set.cpp). These declarations are an extension of this fork.
 
-1. Fix variance, shift mean -> sampled points shift in the feasible triangle.
-2. Fix mean, increase variance -> sampled points spread out while staying feasible.
+## Benchmarks
 
-Benchmark groups (in `test/smt/`) are aligned with these claims:
+The case-study formulas are in [test/smt/](test/smt/). [test/smt/Triangle.smt2](test/smt/Triangle.smt2) declares plain real constants. [test/smt/Prob_Triangle.smt2](test/smt/Prob_Triangle.smt2) uses `UD`. The Gaussian groups are `GD_Triangle_0_*`, `GD_Triangle_5_*`, and `GD_Triangle_7_*`, named for locations `0`, `0.5`, and `-0.5`. Suffixes `_1`, `_2`, and `_5` use scales `0.1`, `0.25`, and `0.5`. Each `.smt2` file holds the exact declaration.
 
-- `GD_Triangle_0_*`: mean = 0
-- `GD_Triangle_5_*`: mean = 0.5
-- `GD_Triangle_7_*`: mean = -0.5
-- Suffix `_1`, `_2`, `_5` correspond to increasing variance settings.
+[test/QF_NIA/](test/QF_NIA/) and [test/QF_NRA/](test/QF_NRA/) contain further SMT-LIB inputs without these annotations.
 
-### Recommended workflow
+## Reproducing Experiments
 
-Run one configuration quickly (sanity check + log generation):
+The paper reports two trends for the triangle case study. With variance fixed, shifting the mean moves the sampled points inside the feasible triangle. With the mean fixed, increasing the variance spreads the points while they remain feasible.
+
+Run the scripts from [test/](test/) after `build/z3` exists. `case_study_run.sh` takes a file name from [test/smt/](test/smt/) and a positive run count. The default file is `GD_Triangle_0_1.smt2` and the default count is `1000`. `case_study_batch.sh` passes its count to every `GD_Triangle_*.smt2` file and also defaults to `1000`. Logs are written under [test/res/](test/res/).
 
 ```bash
 cd test
 ./case_study_run.sh GD_Triangle_0_1.smt2 200
 ```
 
-Run the full Gaussian case-study matrix:
-
 ```bash
 cd test
 ./case_study_batch.sh 1000
 ```
-
-Inspect one generated log:
 
 ```bash
 cd test
 ./case_study_report.sh GD_Triangle_0_1.smt2
 ```
 
-All logs are stored in `test/res/`.
+## Results
 
-## Citation
+Stored sample logs are in [test/res/](test/res/), and charts are in [test/charts/](test/charts/). Rerunning the scripts resamples with this prototype and is not an exact reproduction of the figures in the paper.
 
-If you use this project, please cite:
+## Paper and Citation
 
-```text
-Fuqi Jia, Rui Han, Xutong Ma, Baoquan Cui, Minghao Liu, Pei Huang,
-Feifei Ma, Jian Zhang.
-PSMT: Satisfiability Modulo Theories Meets Probability Distribution.
-ASE 2023.
+Fuqi Jia, Rui Han, Xutong Ma, Baoquan Cui, Minghao Liu, Pei Huang, Feifei Ma, and Jian Zhang. "PSMT: Satisfiability Modulo Theories Meets Probability Distribution." In *2023 38th IEEE/ACM International Conference on Automated Software Engineering (ASE)*, Luxembourg, 11–15 September 2023, pages 1756–1760. IEEE. <https://doi.org/10.1109/ase56229.2023.00183>.
+
+The local copy is [ASE2023_PSMT.pdf](ASE2023_PSMT.pdf).
+
+```bibtex
+@inproceedings{jia2023psmt,
+  author = {Jia, Fuqi and Han, Rui and Ma, Xutong and Cui, Baoquan and Liu, Minghao and Huang, Pei and Ma, Feifei and Zhang, Jian},
+  title = {{PSMT}: Satisfiability Modulo Theories Meets Probability Distribution},
+  booktitle = {2023 38th IEEE/ACM International Conference on Automated Software Engineering (ASE)},
+  year = {2023},
+  month = sep,
+  pages = {1756--1760},
+  address = {Luxembourg},
+  publisher = {IEEE},
+  doi = {10.1109/ase56229.2023.00183},
+  url = {https://doi.org/10.1109/ase56229.2023.00183}
+}
 ```
+
+License terms shipped with this tree are in [LICENSE.txt](LICENSE.txt).
